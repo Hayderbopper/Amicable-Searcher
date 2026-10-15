@@ -22,6 +22,12 @@ The proof is [`exhaustive_search_proof.md`](exhaustive_search_proof.md).
 The Lean project is in [`lean/`](lean/); see [Lean](#lean) for what it
 covers.
 
+## Download
+
+Prebuilt programs for Windows and Linux (x86-64) are on the
+[Releases](../../releases) page: unzip and run `multi_k_searcher` in that
+folder. Building from source (below) gives a program tuned for your own CPU.
+
 ## Quick start
 
 ### Linux
@@ -238,7 +244,8 @@ third_party/            get_hurchalla.sh / .ps1 (the library itself is downloade
 exhaustive_search_proof.md   the proof
 lean/                   the Lean formalization
 results/all_pairs.txt   pairs found so far
-tools/                  helper scripts
+tools/                  helper scripts (and package_linux.sh for releases)
+.github/workflows/       builds and checks both releases for a tag v*
 docs/HISTORY.md         speed measurements, verification runs, every defect fixed
 credits/                the libraries this project uses, and their licenses
 LICENSE                 MIT

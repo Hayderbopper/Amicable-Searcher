@@ -1,0 +1,104 @@
+# Builds the Linux and Windows programs, checks each with a known run (type 23,
+# k from 1 to 8191: 591 pairs) and, for a tag v*, attaches both to a GitHub
+# release.  Run it by hand (Actions > release > Run workflow) to only build.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ clang git patchelf libgmp-dev libmpfr-dev libflint-dev libprimesieve-dev
+      - name: build
+        run: ./build.sh --portable
+      - name: package
+        run: bash tools/package_linux.sh amicable-searcher-linux-x86_64
+      - name: check (type 23, k < 8192 -> 591 pairs)
+        run: |
+          mkdir check && tar -xzf dist/amicable-searcher-linux-x86_64.tar.gz -C check
+          cd check/amicable-searcher-linux-x86_64
+          ./multi_k_searcher --hash "[(1,0),(1,0)] _ [(1,0),(1,0),(1,0)]" --timeout 0 --report 0 1 8192
+          n=$(cat Data/*/multi_k_results.txt | grep -c '^[0-9]*=')
+          echo "lines: $n"; [ "$n" = 1182 ]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/amicable-searcher-linux-x86_64.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-gmp
+            mingw-w64-x86_64-mpfr
+            mingw-w64-x86_64-flint
+            mingw-w64-x86_64-primesieve
+      - name: build
+        shell: pwsh
+        run: .\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
+      - name: package
+        shell: pwsh
+        run: |
+          $d = "dist\amicable-searcher-windows-x86_64"
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          Copy-Item Build\*.exe, Build\*.dll -Destination $d
+          Copy-Item README.md, LICENSE, config.txt -Destination $d
+          Copy-Item credits -Destination $d -Recurse
+          if (Test-Path third_party\hurchalla\LICENSE) { Copy-Item third_party\hurchalla\LICENSE "$d\credits\hurchalla-LICENSE" }
+          Compress-Archive -Path $d -DestinationPath dist\amicable-searcher-windows-x86_64.zip
+      - name: check (type 23, k < 8192 -> 591 pairs)
+        shell: pwsh
+        run: |
+          Expand-Archive dist\amicable-searcher-windows-x86_64.zip -DestinationPath check
+          Set-Location check\amicable-searcher-windows-x86_64
+          .\multi_k_searcher.exe --hash "[(1,0),(1,0)] _ [(1,0),(1,0),(1,0)]" --timeout 0 --report 0 1 8192
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $f = Get-ChildItem -Recurse -Filter multi_k_results.txt Data
+          $n = @(Select-String -Path $f.FullName -Pattern '^[0-9]+=').Count
+          "lines: $n"
+          if ($n -ne 1182) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/amicable-searcher-windows-x86_64.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/linux/amicable-searcher-linux-x86_64.tar.gz
+            artifacts/windows/amicable-searcher-windows-x86_64.zip
+          body: |
+            Prebuilt programs (generic x86-64-v2 builds, clang factoring on).
+
+            * **Windows:** unzip and run `multi_k_searcher.exe` in that folder. The MinGW DLLs are included.
+            * **Linux:** `tar -xzf amicable-searcher-linux-x86_64.tar.gz`, then `./multi_k_searcher` in that folder. GMP, MPFR, FLINT and primesieve are included in `lib/`; needs glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40 or newer). On older systems build from source with `./build.sh`.
+
+            Both were checked in CI: type 23 for k from 1 to 8191 finds the 591 known pairs. For the fastest program on your own CPU, build from source (`build.sh` / `build.ps1` use -march=native).

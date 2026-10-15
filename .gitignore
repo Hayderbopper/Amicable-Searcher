@@ -6,3 +6,4 @@ third_party/local/
 *.lock
 lean/.lake/
 lean/logs/
+dist/
