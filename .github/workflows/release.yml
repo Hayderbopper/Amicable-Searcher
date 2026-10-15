@@ -1,12 +1,19 @@
 # Builds the Linux and Windows programs, checks each with a known run (type 23,
-# k from 1 to 8191: 591 pairs) and, for a tag v*, attaches both to a GitHub
-# release.  Run it by hand (Actions > release > Run workflow) to only build.
+# k from 1 to 8191: 591 pairs) and attaches both to a GitHub release: for a
+# pushed tag v*, or when run by hand (Actions > release > Run workflow) with a
+# tag name, which creates that tag on the commit it ran on.  Run by hand with
+# the tag left empty, it only builds and checks.
 name: release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "release tag to create, e.g. v1.0.1 (empty: build and check only)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -85,7 +92,7 @@ jobs:
           path: dist/amicable-searcher-windows-x86_64.zip
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
     needs: [linux, windows]
     runs-on: ubuntu-24.04
     steps:
@@ -94,6 +101,9 @@ jobs:
           path: artifacts
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Amicable-Searcher ${{ inputs.tag || github.ref_name }}
           files: |
             artifacts/linux/amicable-searcher-linux-x86_64.tar.gz
             artifacts/windows/amicable-searcher-windows-x86_64.zip
