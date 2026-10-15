@@ -46,7 +46,7 @@ x86-64 CPU from about 2009 on. `./build.sh --help` lists every option.
 1. Install [MSYS2](https://www.msys2.org). In the **MSYS2 MINGW64** shell run
 
    ```bash
-   pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-primesieve
+   pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
    ```
 
 2. In PowerShell, in this folder:

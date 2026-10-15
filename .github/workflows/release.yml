@@ -52,7 +52,8 @@ jobs:
             mingw-w64-x86_64-gmp
             mingw-w64-x86_64-mpfr
             mingw-w64-x86_64-flint
-            mingw-w64-x86_64-primesieve
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
       - name: build
         shell: pwsh
         run: .\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
@@ -65,6 +66,7 @@ jobs:
           Copy-Item README.md, LICENSE, config.txt -Destination $d
           Copy-Item credits -Destination $d -Recurse
           if (Test-Path third_party\hurchalla\LICENSE) { Copy-Item third_party\hurchalla\LICENSE "$d\credits\hurchalla-LICENSE" }
+          if (Test-Path third_party\primesieve\LICENSE) { Copy-Item third_party\primesieve\LICENSE "$d\credits\primesieve-LICENSE" }
           Compress-Archive -Path $d -DestinationPath dist\amicable-searcher-windows-x86_64.zip
       - name: check (type 23, k < 8192 -> 591 pairs)
         shell: pwsh

@@ -2,7 +2,9 @@
 
 Amicable-Searcher is built on these libraries. None of their code is stored in
 this repository: the build downloads hurchalla's headers (`third_party/`) and
-uses the others as installed system packages. Each keeps its own license.
+uses the others as installed system packages. On Windows, where MSYS2 has no
+primesieve package, `build.ps1` builds primesieve from its source
+(`third_party/get_primesieve.ps1`) and links it in statically. Each keeps its own license.
 
 | library | author | used for | license |
 |---|---|---|---|

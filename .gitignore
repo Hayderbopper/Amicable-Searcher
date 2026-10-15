@@ -7,3 +7,4 @@ third_party/local/
 lean/.lake/
 lean/logs/
 dist/
+third_party/primesieve/

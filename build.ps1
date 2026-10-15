@@ -12,10 +12,12 @@
 #
 # One-time setup: install MSYS2 (https://www.msys2.org), open "MSYS2 MINGW64"
 # and run
-#   pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-primesieve
+#   pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
 # The hurchalla factoring headers are downloaded into third_party\hurchalla
 # the first time (third_party\get_hurchalla.ps1, needs git), or set
-# $env:HURCHALLA_INCLUDE to a folder that has them.
+# $env:HURCHALLA_INCLUDE to a folder that has them.  MSYS2 has no primesieve
+# package: the first build also compiles it into third_party\primesieve
+# (third_party\get_primesieve.ps1, with MSYS2's cmake and ninja).
 #
 # Clang factoring (on by default): external_factoring.cpp (hurchalla's
 # factoring) is compiled with clang++, everything else with g++.  With GCC
@@ -43,7 +45,7 @@ $mingw = Join-Path $Msys2Root "mingw64"
 $mingwBin = Join-Path $mingw "bin"
 $gpp = Join-Path $mingwBin "g++.exe"
 $clangpp = Join-Path $mingwBin "clang++.exe"
-$pacman = "pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-primesieve"
+$pacman = "pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja"
 if (-not (Test-Path -LiteralPath $gpp)) {
     throw "g++ not found at $gpp.  Install MSYS2 and, in the MSYS2 MINGW64 shell, run:`n  $pacman`n(or pass -Msys2Root if MSYS2 is not in C:\msys64)"
 }
@@ -92,11 +94,27 @@ $flags = @("-O3", "-DNDEBUG", "-std=c++20", "-pthread") + $cpu + @(
     "-I$(Join-Path $mingw 'include')"
 )
 $libs = @("-L$(Join-Path $mingw 'lib')")
-# a primesieve built by hand into <Msys2Root>\tmp\primesieve (older setups)
-$psLocal = Join-Path $Msys2Root "tmp\primesieve"
-if (Test-Path -LiteralPath (Join-Path $psLocal "include\primesieve.hpp")) {
-    $flags += "-I$(Join-Path $psLocal 'include')"
-    $libs = @("-L$(Join-Path $psLocal 'build')") + $libs
+# primesieve: MSYS2 has no package for it, so it is built from source into
+# third_party\primesieve (third_party\get_primesieve.ps1) unless one is found
+function Find-Primesieve {
+    $tp = Join-Path $root "third_party\primesieve\install"
+    if (Test-Path -LiteralPath (Join-Path $tp "include\primesieve.hpp")) { return @((Join-Path $tp "include"), (Join-Path $tp "lib")) }
+    $old = Join-Path $Msys2Root "tmp\primesieve"         # built by hand (older setups)
+    if (Test-Path -LiteralPath (Join-Path $old "include\primesieve.hpp")) { return @((Join-Path $old "include"), (Join-Path $old "build")) }
+    if (Test-Path -LiteralPath (Join-Path $mingw "include\primesieve.hpp")) { return @($null, $null) }
+    return $null
+}
+$ps = Find-Primesieve
+if ($null -eq $ps) {
+    Write-Host "primesieve not found; building it from source (third_party\get_primesieve.ps1)"
+    & (Join-Path $root "third_party\get_primesieve.ps1") -Msys2Root $Msys2Root
+    $ps = Find-Primesieve
+    if ($null -eq $ps) { throw "primesieve still not found after building it" }
+}
+if ($ps[0]) {
+    Write-Host "primesieve: $($ps[0])"
+    $flags += "-I$($ps[0])"
+    $libs = @("-L$($ps[1])") + $libs
 }
 $libs += @("-lprimesieve", "-lflint", "-lmpfr", "-lgmpxx", "-lgmp")
 # clang realigns the stack for AVX itself (GCC bug 54412 is GCC's) and has no
