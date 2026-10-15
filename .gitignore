@@ -1,0 +1,8 @@
+Build/
+Data/
+third_party/hurchalla/
+third_party/local/
+*.o
+*.lock
+lean/.lake/
+lean/logs/

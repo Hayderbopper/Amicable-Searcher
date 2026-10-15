@@ -1,0 +1,61 @@
+# ==========================================
+# --- CONFIGURATION ---  (read by Build/multi_k_searcher, .exe on Windows)
+# Anything given on the command line overrides these values.
+# ==========================================
+
+# What to search:
+#   range    every k from start_k to end_k, many k at once (a k that runs past
+#            timeout_seconds is written to Data/<hash>/incomplete.txt)
+#   single   the one k in single_k, with every thread on it
+#   skipped  the k values in Data/<hash>/incomplete.txt, smallest first, every
+#            thread on each; a k is deleted from the file as soon as it has
+#            been searched completely, and its pairs go to multi_k_results.txt
+# single and skipped continue where they stopped: start them again and an
+# interrupted k picks up from Data/<hash>/single_k_status.txt.  A range run
+# and a skipped run of the same hash can go at the same time (two windows,
+# one with --mode skipped).
+mode = range
+
+# mode = single: the k to search.
+single_k =
+
+# mode = single / skipped: give up on a k after this many seconds (0 = never,
+# finish every k).  A k given up keeps its line in incomplete.txt with the
+# exact point to continue from (resume=general:root,q1,q2); the next run
+# continues it there.
+single_timeout_seconds = 0
+
+# The hash: [smaller member] _ [larger member]
+#   N1 = A1 * P1^a1 * P2^a2 * ...      (smaller member, P1 < P2 < ...)
+#   N2 = A1 * Q1^c1 * Q2^c2 * ...      (larger member,  Q1 < Q2 < ...)
+#   each prime is written (exponent, multiplicity): the prime divides A1
+#   exactly "multiplicity" times (0 = it does not divide A1).
+#   A1 = gcd(N1, N2) = k.
+# Any number of primes on either side, any exponents.  Examples:
+#   [(1,0),(1,0)] _ [(1,0),(1,0),(1,0)]          type 23
+#   [(1,0),(1,0)] _ [(2,1),(1,0),(1,0)]          type X22 (Q1 divides A1 once)
+#   [(1,0),(1,0)] _ [(1,0)]                      type 21  (220/284 has k = 4)
+#   [(4,1),(1,0)] _ [(1,0),(2,0)]                1184/1210 (k = 2)
+hash = [(1,0),(1,0)] _ [(1,0),(1,0),(1,0)]
+
+# k = A1 range.  end_k is exclusive, 0 = run until stopped.
+# start_k is only used the first time: after that the run resumes from
+# Data/<hash>/multi_k_state.txt (delete that file to start over).
+start_k = 1
+end_k = 8192
+
+# mode = range: give up on a single k after this many seconds and list it in
+# Data/<hash>/incomplete.txt (finish those later with mode = range).
+# 0 = never give up (every k is finished, the strict exhaustive mode).
+timeout_seconds = 0
+
+# Progress line every N seconds (0 = off).
+report_seconds = 60
+
+# Threads, 0 = all cores (all logical processors).
+workers = 0
+
+# Results are written in the sech.me/ap submission format.
+author = Chesnut
+# year: leave empty for the current year
+year =

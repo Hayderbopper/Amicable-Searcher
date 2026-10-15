@@ -1,0 +1,9 @@
+import AmicableProof.Defs
+import AmicableProof.Sanity
+import AmicableProof.Basic
+import AmicableProof.Resume
+import AmicableProof.FP
+import AmicableProof.Assumptions
+import AmicableProof.MainStatement
+import AmicableProof.Consistency
+import AmicableProof.Search
