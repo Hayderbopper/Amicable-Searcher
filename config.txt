@@ -56,6 +56,6 @@ report_seconds = 60
 workers = 0
 
 # Results are written in the sech.me/ap submission format.
-author = Chesnut
+author = Amicable-Searcher
 # year: leave empty for the current year
 year =

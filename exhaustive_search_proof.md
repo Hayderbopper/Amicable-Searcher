@@ -1,6 +1,6 @@
-# Why `Amicable_Search` never misses a pair: a proof
+# Why Amicable-Searcher never misses a pair: a proof
 
-This document proves that the search engine of `Amicable_Search`
+This document proves that the search engine of Amicable-Searcher
 (formerly `General_Hash_Search`, the "general engine") is **exhaustive**. For every `k` in the requested
 range, it writes every amicable pair with the requested hash and
 `gcd(N1, N2) = k`, unless it lists that `k` in `incomplete.txt`.

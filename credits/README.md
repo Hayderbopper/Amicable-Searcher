@@ -1,6 +1,6 @@
 # Credits
 
-Amicable Search is built on these libraries. None of their code is stored in
+Amicable-Searcher is built on these libraries. None of their code is stored in
 this repository: the build downloads hurchalla's headers (`third_party/`) and
 uses the others as installed system packages. Each keeps its own license.
 

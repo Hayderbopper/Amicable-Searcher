@@ -1,4 +1,4 @@
-# Amicable Search
+# Amicable-Searcher
 
 An exhaustive search for amicable pairs of **any hash**, with a written proof
 that it never misses a pair and a Lean formalization of the proof's
@@ -150,11 +150,11 @@ how many `k` are incomplete.
 `single_k_results.txt` (mode single):
 
 ```
-21 Chesnut 2026
+21 Amicable-Searcher 2026
 220=2^2*5*11
 284=2^2*71
 
-X12 Chesnut 2026
+X12 Amicable-Searcher 2026
 1184=2^5*37
 1210=2*5*11^2
 ```

@@ -9,7 +9,7 @@
 // it reads DIR/Data.  The output (default DIR/all_pairs.txt) has the same
 // format as the results files:
 //
-//   23 Chesnut 2026
+//   23 Amicable-Searcher 2026
 //   1511930=2*5*7*21599
 //   1598470=2*5*19*47*179
 //   (blank line)
@@ -56,7 +56,7 @@ namespace {
 struct Pair {
     BigInt small, large;
     std::string small_text, large_text;         // "m=factors", "n=factors" as read
-    std::string header;                         // "23 Chesnut 2026" (may be empty)
+    std::string header;                         // "23 Amicable-Searcher 2026" (may be empty)
     std::string source;                         // file:line, for messages
 };
 

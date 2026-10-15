@@ -23,7 +23,7 @@ struct AppConfig {
     std::uint64_t single_k = 0;                 // mode = single
     std::uint64_t single_timeout_seconds = 0;   // single / skipped: time limit per k, 0 = none
     int workers = 0;
-    std::string author = "Chesnut";
+    std::string author = "Amicable-Searcher";
     std::string year;                       // empty = current year
     std::filesystem::path root;
     bool show_plan = false;
