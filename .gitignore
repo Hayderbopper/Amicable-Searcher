@@ -8,3 +8,4 @@ lean/.lake/
 lean/logs/
 dist/
 third_party/primesieve/
+third_party/mimalloc/
