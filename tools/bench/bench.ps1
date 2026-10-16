@@ -44,11 +44,25 @@ function Invoke-Run([string]$exe, [string]$dir, [string]$hash, [string]$k0, [str
     $out = Join-Path $dir "out.txt"
     $argList = @("--root", "`"$dir`"", "--mode", "range", "--hash", "`"$hash`"", "--workers", "$Threads",
                  "--timeout", "0", "--report", "0", $k0, $k1)
+    # Process.WaitForExit, not Start-Process -Wait: in Windows PowerShell the
+    # latter only notices the end about once a second, which rounded every
+    # time up to the next whole second
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = $argList -join " "
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $dir
     $sw = [Diagnostics.Stopwatch]::StartNew()
-    $p = Start-Process -FilePath $exe -ArgumentList $argList -NoNewWindow -Wait -PassThru `
-                       -RedirectStandardOutput $out -RedirectStandardError (Join-Path $dir "err.txt")
+    $p = [Diagnostics.Process]::Start($psi)
+    $so = $p.StandardOutput.ReadToEndAsync()
+    $se = $p.StandardError.ReadToEndAsync()
+    $p.WaitForExit()
     $sw.Stop()
-    $text = (Get-Content -LiteralPath $out -Raw) + (Get-Content -LiteralPath (Join-Path $dir "err.txt") -Raw)
+    [IO.File]::WriteAllText($out, $so.Result)
+    [IO.File]::WriteAllText((Join-Path $dir "err.txt"), $se.Result)
+    $text = $so.Result + $se.Result
     if ($p.ExitCode -ne 0 -or $text -notmatch "complete: every k") {
         foreach ($f in @($out, (Join-Path $dir "err.txt"))) {
             if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f -Tail 15 | ForEach-Object { Say "  | $_" } }
