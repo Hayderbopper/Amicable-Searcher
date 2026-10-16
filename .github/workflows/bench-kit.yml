@@ -27,10 +27,13 @@ jobs:
           fetch-depth: 0
       - name: base checkout
         shell: pwsh
+        env:
+          BASE: ${{ inputs.base }}
         run: |
-          $base = "${{ inputs.base }}"
+          $base = $env:BASE
           if (-not $base) { $base = "origin/main" }
-          git -C new worktree add ../old $base
+          if ($base -notmatch '^[A-Za-z0-9._/][A-Za-z0-9._/-]*$') { throw "base must be a branch, tag or commit: $base" }
+          git -C new worktree add ../old "$base"
           git -C old log -1 --format="old: %H %s"
           git -C new log -1 --format="new: %H %s"
       - uses: msys2/setup-msys2@v2

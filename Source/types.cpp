@@ -65,10 +65,21 @@ void ResultWriter::flush_locked() {
     // opened under the lock: another run of this hash (a range run next to a
     // skipped run) may append to the same file
     FileLock flock(path_);
-    std::ofstream out(path_, std::ios::out | std::ios::app);
-    out << pending_;
-    out.flush();
-    if (!out) throw std::runtime_error("Cannot write output file: " + path_.string());
+    std::error_code ec;
+    const std::uintmax_t before = std::filesystem::exists(path_, ec) ? std::filesystem::file_size(path_, ec) : 0;
+    const bool sized = !ec;
+    bool ok = false;
+    {
+        std::ofstream out(path_, std::ios::out | std::ios::app);
+        out << pending_;
+        out.flush();
+        ok = static_cast<bool>(out);
+    }
+    if (!ok) {
+        // drop a partly written batch, so a retry appends it whole and once
+        if (sized) std::filesystem::resize_file(path_, before, ec);
+        throw std::runtime_error("Cannot write output file: " + path_.string());
+    }
     pending_.clear();
 #ifdef AMICABLE_TRACE
     for (const std::string& s : pending_trace_) trace_write("PAIR " + s);

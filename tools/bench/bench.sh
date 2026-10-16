@@ -18,6 +18,7 @@ REPORT="$PWD/bench_report.txt"
 pairs() {  # sorted pair lines of a run folder
     cat "$1"/Data/*/multi_k_results.txt 2>/dev/null | grep -E '^[0-9]+=' | sort -u
 }
+calc() { awk "BEGIN { printf \"%.6f\", $1 }"; }   # arithmetic without bc
 run() {  # program, folder, hash, start, end -> prints seconds
     rm -rf "$2"; mkdir -p "$2"
     local t0 t1
@@ -26,7 +27,7 @@ run() {  # program, folder, hash, start, end -> prints seconds
         || { echo "run failed: $1 (see $2/out.txt)" >&2; cat "$2/out.txt" >&2; exit 1; }
     t1=$(date +%s.%N)
     grep -q "complete: every k" "$2/out.txt" || { echo "run did not complete: $1" >&2; exit 1; }
-    echo "$t1 - $t0" | bc
+    calc "$t1 - $t0"
 }
 median() { sort -g | awk '{a[NR]=$1} END{print (NR%2) ? a[(NR+1)/2] : (a[NR/2]+a[NR/2+1])/2}'; }
 
@@ -49,9 +50,9 @@ while IFS='|' read -r name hash k0 k1; do
         same="yes ($(( $(wc -l < "$WORK/new.pairs") / 2 )) pairs)"
     done
     mo="$(printf '%s\n' "${to[@]}" | median)"; mn="$(printf '%s\n' "${tn[@]}" | median)"
-    tot_old="$(echo "$tot_old + $mo" | bc)"; tot_new="$(echo "$tot_new + $mn" | bc)"
-    printf '%-34s %9.2f %9.2f %7.2fx  %s\n' "$name" "$mo" "$mn" "$(echo "$mo / $mn" | bc -l)" "$same" | tee -a "$REPORT"
+    tot_old="$(calc "$tot_old + $mo")"; tot_new="$(calc "$tot_new + $mn")"
+    printf '%-34s %9.2f %9.2f %7.2fx  %s\n' "$name" "$mo" "$mn" "$(calc "$mo / $mn")" "$same" | tee -a "$REPORT"
 done < "$HERE/suites.txt"
-printf '%-34s %9.2f %9.2f %7.2fx  %s\n' "total" "$tot_old" "$tot_new" "$(echo "$tot_old / $tot_new" | bc -l)" \
+printf '%-34s %9.2f %9.2f %7.2fx  %s\n' "total" "$tot_old" "$tot_new" "$(calc "$tot_old / $tot_new")" \
     "$([ $all_same = 1 ] && echo "all runs found the same pairs" || echo "PAIRS DIFFER")" | tee -a "$REPORT"
 [ $all_same = 1 ]
