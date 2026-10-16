@@ -152,6 +152,12 @@ std::string trace_path(const Path& p) {
 }
 #endif
 
+// this thread's finished k values not yet merged (see Engine::flush_done)
+std::vector<u64>& done_buffer() {
+    static thread_local std::vector<u64> buf;
+    return buf;
+}
+
 class Engine {
 public:
     explicit Engine(const EngineOptions& o)
@@ -194,6 +200,14 @@ private:
     std::mutex fmu;
     u64 frontier;
     std::set<u64> ahead;
+    // Finished k values are merged into frontier/ahead in batches, from a
+    // per-thread buffer: with many quick k (most k of a range have nothing to
+    // search) the threads otherwise queue up on fmu for every k.  The buffer
+    // is merged when it is full, before a thread waits and when it exits, so
+    // frontier lags at most a few k behind (it only ever stays too low,
+    // which is safe: a resumed run repeats those k).
+    static constexpr std::size_t DONE_BATCH = 64;
+    void flush_done();
 
     std::mutex regmu;
     std::vector<std::weak_ptr<KJob>> registry;
@@ -243,7 +257,12 @@ private:
     void handle_exception(KJob& kj);
     void append_incomplete(u64 k, const std::string& why);
     EngineStatus status();
-    void wake() { wcv.notify_all(); }
+    // workers waiting on wcv; a notify with none waiting is skipped (a waiter
+    // that just missed one wakes on its own within 2 ms)
+    std::atomic<int> sleepers{0};
+    void wake() {
+        if (sleepers.load() > 0) wcv.notify_all();
+    }
 };
 
 void Engine::append_incomplete(u64 k, const std::string& why) {
@@ -290,20 +309,31 @@ void Engine::k_done(KJob& kj) {
             }
             std::cerr << "[incomplete] k=" << kj.k << " " << why << '\n';
         }
-        std::lock_guard<std::mutex> lock(fmu);
-        if (kj.k == frontier) {
+        done_buffer().push_back(kj.k);
+        if (done_buffer().size() >= DONE_BATCH) flush_done();
+        completed.fetch_add(1);
+    }
+    active.fetch_sub(1);
+    wake();
+}
+
+void Engine::flush_done() {
+    std::vector<u64>& buf = done_buffer();
+    if (buf.empty()) return;
+    std::sort(buf.begin(), buf.end());
+    std::lock_guard<std::mutex> lock(fmu);
+    for (const u64 k : buf) {
+        if (k == frontier) {
             ++frontier;
             while (!ahead.empty() && *ahead.begin() == frontier) {
                 ahead.erase(ahead.begin());
                 ++frontier;
             }
         } else {
-            ahead.insert(kj.k);
+            ahead.insert(k);
         }
-        completed.fetch_add(1);
     }
-    active.fetch_sub(1);
-    wake();
+    buf.clear();
 }
 
 bool Engine::take_block() {
@@ -774,7 +804,8 @@ bool Engine::expand(const std::shared_ptr<KJob>& kj, GenState& g, int d, int job
 void Engine::run_k(u64 k) {
     std::shared_ptr<KJob> kj(new KJob(k, *opt.writer));
     kj->started_ms = now_ms();
-    {
+    if (opt.timeout_seconds > 0 || opt.track_resume) {
+        // the registry is only read for the time limit and the single-k status
         std::lock_guard<std::mutex> lock(regmu);
         registry.push_back(kj);
         if (opt.track_resume) single_job = kj;
@@ -810,13 +841,17 @@ void Engine::worker() {
             }
             active.fetch_sub(1);
         }
+        flush_done();
         if (active.load() == 0) {
             std::lock_guard<std::mutex> lock(qmu);
             if (queue.empty()) break;
         }
         std::unique_lock<std::mutex> lock(wmu);
+        sleepers.fetch_add(1);
         wcv.wait_for(lock, std::chrono::milliseconds(2));
+        sleepers.fetch_sub(1);
     }
+    flush_done();
 }
 
 EngineStatus Engine::status() {
