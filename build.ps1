@@ -143,6 +143,9 @@ if (-not $NoMimalloc) {
 if ($mimalloc) {
     $flags += @("-DAMICABLE_MIMALLOC", "-I$(Join-Path $miDir 'include')")
     $libs += @("-lpsapi", "-lshell32", "-luser32", "-ladvapi32", "-lbcrypt")    # what mimalloc uses on Windows
+    # libstdc++ linked in: code inside libstdc++-6.dll would free memory that
+    # this program's new/delete gave out with its own (the C runtime's) free
+    $libs += "-static-libstdc++"
 }
 # clang realigns the stack for AVX itself (GCC bug 54412 is GCC's) and has no
 # GNU as option: the same flags without -Wa,-muse-unaligned-vector-move
