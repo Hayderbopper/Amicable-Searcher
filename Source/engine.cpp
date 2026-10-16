@@ -257,6 +257,7 @@ private:
     void handle_exception(KJob& kj);
     void append_incomplete(u64 k, const std::string& why);
     EngineStatus status();
+    bool flush_pairs();
     // workers waiting on wcv; a notify with none waiting is skipped (a waiter
     // that just missed one wakes on its own within 2 ms)
     std::atomic<int> sleepers{0};
@@ -282,6 +283,24 @@ void Engine::handle_exception(KJob& kj) {
     kj.cancel = true;
     stop = true;
     wake();
+}
+
+// Writes the pairs found so far to the results file.  false: the write
+// failed, the run stops, and no status may be saved (it could count a k as
+// done whose pairs are not in the file).
+bool Engine::flush_pairs() {
+    try {
+        opt.writer->flush();
+        return true;
+    } catch (...) {
+        {
+            std::lock_guard<std::mutex> lock(errmu);
+            if (!fatal) fatal = std::current_exception();
+        }
+        stop = true;
+        wake();
+        return false;
+    }
 }
 
 void Engine::release(const std::shared_ptr<KJob>& kj) {
@@ -1000,6 +1019,7 @@ EngineStatus Engine::run() {
         if (ms < next_status_ms) continue;
         next_status_ms = (ms / 1000 + 1) * 1000;
         const EngineStatus st = status();
+        if (!flush_pairs()) continue;                    // the pairs of every k the snapshot counts as done
         if (opt.on_tick) opt.on_tick(st);
         if (report_ms > 0 && ms >= next_report_ms) {
             next_report_ms = (ms / report_ms + 1) * report_ms;
@@ -1017,8 +1037,9 @@ EngineStatus Engine::run() {
     for (auto& t : threads) t.join();
 
     EngineStatus st = status();
+    const bool flushed = flush_pairs();
     st.finished = !fatal && !stop.load();
-    if (opt.on_tick) opt.on_tick(st);
+    if (flushed && opt.on_tick) opt.on_tick(st);
     if (fatal) std::rethrow_exception(fatal);
     return st;
 }

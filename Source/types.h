@@ -34,6 +34,14 @@ public:
     // re-reads the file's pairs (another run of this hash may have added some)
     void refresh_known();
 
+    // Pairs are collected in memory and appended to the file by flush(): one
+    // locked append for many pairs (opening and locking the file once per
+    // pair is slow on Windows).  The engine flushes after each status
+    // snapshot and before saving it, so a saved resume point never covers a
+    // pair that is not in the file yet.  The destructor flushes too.
+    void flush();
+    ~ResultWriter();
+
     std::atomic<std::uint64_t> total_pairs{0};      // pairs found this run
     std::atomic<std::uint64_t> repeated_pairs{0};   // of those, already in the file (not written again)
 
@@ -43,6 +51,11 @@ private:
     std::string author_;
     std::string year_;
     std::unordered_set<std::string> known_;         // smaller members already in the file
+    std::string pending_;                           // pairs not written to the file yet
+#ifdef AMICABLE_TRACE
+    std::vector<std::string> pending_trace_;
+#endif
+    void flush_locked();
 };
 
 // Per-k sink: removes duplicates found through different P3/P4 routes.
