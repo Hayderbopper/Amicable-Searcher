@@ -26,6 +26,11 @@ function Resolve-Program([string]$p) {
 }
 $oldExe = Resolve-Program $Old
 $newExe = Resolve-Program $New
+# a kit keeps the DLLs both programs load in dlls\ next to old\ and new\
+foreach ($exe in @($oldExe, $newExe)) {
+    $dlls = Join-Path (Split-Path (Split-Path $exe -Parent) -Parent) "dlls"
+    if ((Test-Path -LiteralPath $dlls) -and -not (($env:PATH -split ';') -contains $dlls)) { $env:PATH = "$dlls;$env:PATH" }
+}
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ("amicable_bench_" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $work | Out-Null

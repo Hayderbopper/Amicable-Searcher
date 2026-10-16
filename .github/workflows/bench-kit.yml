@@ -84,7 +84,6 @@ jobs:
       - name: quick benchmark on this runner
         shell: powershell
         run: |
-          $env:PATH = "$env:KIT\dlls;$env:PATH"
           & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 3 *>&1 | Tee-Object -FilePath runner_log.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
       # the kit and the runner's report also go to the branch bench-kits (one

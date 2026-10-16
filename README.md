@@ -56,8 +56,8 @@ x86-64 CPU from about 2009 on. `./build.sh --help` lists every option.
    .\Build\multi_k_searcher.exe --hash "[(1,0),(1,0)] _ [(1,0)]" 1 100000
    ```
 
-`-Portable`, `-Clean`, `-NoClangFactoring` and `-Msys2Root D:\msys64` are
-the options. The build copies the MinGW DLLs into `Build\`, so the folder
+`-Portable`, `-Clean`, `-NoClangFactoring`, `-NoMimalloc` and
+`-Msys2Root D:\msys64` are the options. The build copies the MinGW DLLs into `Build\`, so the folder
 runs on its own.
 
 ### What the build does
@@ -72,6 +72,13 @@ runs on its own.
   clang compiles it. The file's interface passes no `__int128` by value, so
   the two compilers' objects link safely. `--no-clang-factoring` (Linux) or
   `-NoClangFactoring` (Windows) turns it off.
+* **Windows uses mimalloc.** The search makes many small allocations from
+  several threads, which the Windows heap handles slowly. `build.ps1`
+  downloads Microsoft's mimalloc into `third_party/mimalloc/`
+  (`third_party/get_mimalloc.ps1`) and compiles it in
+  (`Source/fast_alloc.cpp`); on GitHub's Windows runners that made the test
+  runs 1.15–1.35x faster. `-NoMimalloc` leaves it out. The Linux build
+  keeps glibc's allocator, which is already fast.
 * Check a new build with a run whose pairs you know, for example type 23
   for `k` from 1 to 8191: 591 pairs.
 
@@ -240,11 +247,11 @@ build.sh, build.ps1     the Linux and Windows builds
 install_deps.sh         Linux dependencies
 config.txt              mode, hash, k range, time limits, threads, author/year
 Source/                 the C++ sources
-third_party/            get_hurchalla.sh / .ps1 (the library itself is downloaded)
+third_party/            get_hurchalla.sh / .ps1, get_mimalloc.ps1 (the libraries are downloaded)
 exhaustive_search_proof.md   the proof
 lean/                   the Lean formalization
 results/all_pairs.txt   pairs found so far
-tools/                  helper scripts (and package_linux.sh for releases)
+tools/                  helper scripts (package_linux.sh for releases, bench/ for old-vs-new timing)
 .github/workflows/       builds and checks both releases for a tag v*
 docs/HISTORY.md         speed measurements, verification runs, every defect fixed
 credits/                the libraries this project uses, and their licenses
