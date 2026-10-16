@@ -47,6 +47,7 @@ jobs:
             mingw-w64-x86_64-flint
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-mimalloc
       - name: build new
         shell: pwsh
         run: .\new\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
@@ -77,7 +78,7 @@ jobs:
       - name: quick benchmark on this runner
         shell: powershell
         run: |
-          & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 1 *>&1 | Tee-Object -FilePath runner_log.txt
+          & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 3 *>&1 | Tee-Object -FilePath runner_log.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
       # the kit and the runner's report also go to the branch bench-kits (one
       # commit, replaced each time), where they can be fetched with git

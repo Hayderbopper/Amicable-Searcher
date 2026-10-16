@@ -8,11 +8,12 @@
 #   .\build.ps1 -Clean               delete the object files first
 #   .\build.ps1 -NoClangFactoring    compile external_factoring.cpp with g++ too
 #                                    (only if clang++ cannot be installed)
+#   .\build.ps1 -NoMimalloc          keep MinGW's default memory allocator
 #   .\build.ps1 -Msys2Root D:\msys64 MSYS2 somewhere else than C:\msys64
 #
 # One-time setup: install MSYS2 (https://www.msys2.org), open "MSYS2 MINGW64"
 # and run
-#   pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+#   pacman -S --needed git mingw-w64-x86_64-gcc mingw-w64-x86_64-clang mingw-w64-x86_64-gmp mingw-w64-x86_64-mpfr mingw-w64-x86_64-flint mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-mimalloc
 # The hurchalla factoring headers are downloaded into third_party\hurchalla
 # the first time (third_party\get_hurchalla.ps1, needs git), or set
 # $env:HURCHALLA_INCLUDE to a folder that has them.  MSYS2 has no primesieve
@@ -25,6 +26,11 @@
 # file's interface passes no __int128 by value, so the two compilers' objects
 # link safely.
 #
+# mimalloc (used when MSYS2's mimalloc package is installed): the search makes
+# many small allocations from several threads, and the Windows heap behind
+# MinGW's malloc is slow at that.  Source\fast_alloc.cpp routes new/delete and
+# GMP's allocations to mimalloc.
+#
 # The programs need the MinGW DLLs (GMP, FLINT, primesieve, ...): run them from
 # the "MSYS2 MINGW64" shell or with <Msys2Root>\mingw64\bin on PATH.  The build
 # also copies those DLLs into Build\ so the folder runs on its own.
@@ -32,6 +38,7 @@ param(
     [switch]$Portable,
     [switch]$Clean,
     [switch]$NoClangFactoring,
+    [switch]$NoMimalloc,
     [string]$Msys2Root = "C:\msys64"
 )
 $ErrorActionPreference = "Stop"
@@ -117,6 +124,11 @@ if ($ps[0]) {
     $libs = @("-L$($ps[1])") + $libs
 }
 $libs += @("-lprimesieve", "-lflint", "-lmpfr", "-lgmpxx", "-lgmp")
+$mimalloc = (-not $NoMimalloc) -and (Test-Path -LiteralPath (Join-Path $mingw "include\mimalloc.h"))
+if ($mimalloc) {
+    $flags += "-DAMICABLE_MIMALLOC"
+    $libs += "-lmimalloc"
+}
 # clang realigns the stack for AVX itself (GCC bug 54412 is GCC's) and has no
 # GNU as option: the same flags without -Wa,-muse-unaligned-vector-move
 $clangFlags = $flags | Where-Object { $_ -ne "-Wa,-muse-unaligned-vector-move" }
@@ -125,6 +137,7 @@ $factoringCompiler = $gpp
 if (-not $NoClangFactoring) { $factoringCompiler = $clangpp }
 Write-Host "compiler : $gpp"
 Write-Host "factoring: $factoringCompiler"
+Write-Host "allocator: $(if ($mimalloc) { 'mimalloc' } elseif ($NoMimalloc) { 'default (-NoMimalloc)' } else { 'default (mimalloc not installed: pacman -S mingw-w64-x86_64-mimalloc)' })"
 Write-Host "mode     : $(if ($Portable) { 'portable' } else { 'native' }) ($($cpu -join ' '))"
 
 # ---------------------------------------------------------------- compile
