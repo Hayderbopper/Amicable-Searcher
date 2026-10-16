@@ -1367,9 +1367,28 @@ inline bool iadd(i128 a, i128 b, i128& o) { return !__builtin_add_overflow(a, b,
 inline bool isub(i128 a, i128 b, i128& o) { return !__builtin_sub_overflow(a, b, &o); }
 inline u128 uabs(i128 v) { return v < 0 ? static_cast<u128>(-v) : static_cast<u128>(v); }
 
+u64 gcd_binary_u64(u64 a, u64 b) {                      // a, b > 0
+    const int shift = __builtin_ctzll(a | b);
+    a >>= __builtin_ctzll(a);
+    do {
+        b >>= __builtin_ctzll(b);
+        if (a > b) std::swap(a, b);
+        b -= a;
+    } while (b != 0);
+    return a << shift;
+}
+
 u128 gcd_u128(u128 a, u128 b) {
     if (a == 0) return b;
     if (b == 0) return a;
+    // mostly both fit in 64 bits, or one does: then 64-bit steps suffice
+    if ((a >> 64) == 0 && (b >> 64) != 0) b %= a;
+    else if ((b >> 64) == 0 && (a >> 64) != 0) a %= b;
+    if (((a | b) >> 64) == 0) {
+        if (a == 0) return b;
+        if (b == 0) return a;
+        return gcd_binary_u64(static_cast<u64>(a), static_cast<u64>(b));
+    }
     auto ctz128 = [](u128 x) {
         const u64 lo = static_cast<u64>(x);
         return lo ? __builtin_ctzll(lo) : 64 + __builtin_ctzll(static_cast<u64>(x >> 64));
@@ -1704,6 +1723,20 @@ bool tail_divisor3(const Node& n, const Rem& r, SearchCtx& ctx, bool allow_float
 // exceed 2 (exact test).  false: no solution here.  zfloor (z > zfloor) is raised.
 bool alone_filter(const Node& n, int zside, const BigInt& ulo, BigInt& zfloor) {
     if (zside != 0) return true;
+    {   // the same in 128-bit arithmetic when everything fits
+        constexpr i128 LIM = static_cast<i128>(1) << 120;
+        i128 sx, px, sy, u, zf, a, b, c, zmin, l, r;
+        if (big_to_i128(n.sx, sx) && big_to_i128(n.px, px) && big_to_i128(n.sy, sy) && big_to_i128(ulo, u) &&
+            big_to_i128(zfloor, zf) && sx > 0 && u < LIM && zf < LIM && imul(sy, u + 1, a) && imul(a, u + 2, b) && b >= 0) {
+            zmin = b / sx + (b % sx != 0) - 1;                 // ceil(b / sx) - 1
+            if (zmin < zf + 1) zmin = zf + 1;
+            if (imul(sx, zmin + 1, l) && imul(px, 2, c) && imul(c, zmin, r)) {
+                if (!(l > r)) return false;
+                zfloor = from_i128(zmin - 1);
+                return true;
+            }
+        }
+    }
     BigInt zmin = n.sy * (ulo + 1) * (ulo + 2);
     mpz_cdiv_q(zmin.get_mpz_t(), zmin.get_mpz_t(), n.sx.get_mpz_t());
     zmin -= 1;
