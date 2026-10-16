@@ -100,3 +100,4 @@ try {
 Write-Host ""
 Write-Host "Report saved to $report"
 if (-not $allSame) { exit 1 }
+exit 0

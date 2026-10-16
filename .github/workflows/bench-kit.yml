@@ -14,6 +14,9 @@ on:
         required: false
         default: "main"
 
+permissions:
+  contents: write
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -74,14 +77,29 @@ jobs:
       - name: quick benchmark on this runner
         shell: powershell
         run: |
-          & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 1
+          & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 1 *>&1 | Tee-Object -FilePath runner_log.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
+      # the kit and the runner's report also go to the branch bench-kits (one
+      # commit, replaced each time), where they can be fetched with git
+      - name: publish kit to the bench-kits branch
+        if: always()
+        shell: pwsh
+        run: |
+          $sha = (git -C new rev-parse --short HEAD)
+          New-Item -ItemType Directory -Force -Path pub | Out-Null
+          if (Test-Path kit) { Compress-Archive -Path "kit\*" -DestinationPath "pub\Amicable-Searcher-bench-$sha.zip" }
+          if (Test-Path runner_log.txt) { Copy-Item runner_log.txt pub\ }
+          if (Test-Path new\tools\bench\bench_report.txt) { Copy-Item new\tools\bench\bench_report.txt pub\ }
+          git -C new log -1 --format="%H %s" | Out-File -Encoding ascii pub\COMMIT.txt
+          Set-Location pub
+          git init -q
+          git checkout -q -b bench-kits
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "bench kit for $sha"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" bench-kits
       - uses: actions/upload-artifact@v4
         with:
           name: bench-kit
           path: kit
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: runner-report
-          path: new/tools/bench/bench_report.txt
