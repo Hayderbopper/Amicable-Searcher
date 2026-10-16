@@ -48,14 +48,13 @@ function Invoke-Run([string]$exe, [string]$dir, [string]$hash, [string]$k0, [str
     $p = Start-Process -FilePath $exe -ArgumentList $argList -NoNewWindow -Wait -PassThru `
                        -RedirectStandardOutput $out -RedirectStandardError (Join-Path $dir "err.txt")
     $sw.Stop()
-    if ($p.ExitCode -ne 0) {
-        foreach ($f in @($out, (Join-Path $dir "err.txt"))) {
-            if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f -Tail 15 | ForEach-Object { Write-Host "  | $_" } }
-        }
-        throw "run failed (exit $($p.ExitCode)): $exe  (see $dir)"
-    }
     $text = (Get-Content -LiteralPath $out -Raw) + (Get-Content -LiteralPath (Join-Path $dir "err.txt") -Raw)
-    if ($text -notmatch "complete: every k") { throw "run did not complete: $exe  (see $dir)" }
+    if ($p.ExitCode -ne 0 -or $text -notmatch "complete: every k") {
+        foreach ($f in @($out, (Join-Path $dir "err.txt"))) {
+            if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f -Tail 15 | ForEach-Object { Say "  | $_" } }
+        }
+        throw "run failed or did not complete (exit code $($p.ExitCode)): $exe"
+    }
     return $sw.Elapsed.TotalSeconds
 }
 
@@ -98,6 +97,9 @@ try {
     }
     $verdict = if ($allSame) { "all runs found the same pairs" } else { "PAIRS DIFFER" }
     Say ("{0,-34} {1,9:N2} {2,9:N2} {3,7:N2}x  {4}" -f "total", $totOld, $totNew, ($totOld / $totNew), $verdict)
+} catch {
+    Say "ERROR: $($_.Exception.Message)"
+    $allSame = $false
 } finally {
     Set-Content -LiteralPath $report -Value $lines
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
