@@ -62,10 +62,17 @@ jobs:
         run: |
           $sha = (git -C new rev-parse --short HEAD)
           $k = "kit\Amicable-Searcher-bench-$sha"
+          # the DLLs once, in dlls\ (run_benchmark.bat puts it on PATH); a DLL
+          # that differs between the two builds stays next to its program
+          New-Item -ItemType Directory -Force -Path "$k\dlls" | Out-Null
           foreach ($side in "old", "new") {
             New-Item -ItemType Directory -Force -Path "$k\$side" | Out-Null
-            Copy-Item "$side\Build\*.exe", "$side\Build\*.dll" -Destination "$k\$side"
-            Copy-Item "$side\config.txt" -Destination "$k\$side"
+            Copy-Item "$side\Build\multi_k_searcher.exe", "$side\config.txt" -Destination "$k\$side"
+            foreach ($d in Get-ChildItem "$side\Build\*.dll") {
+              $shared = Join-Path "$k\dlls" $d.Name
+              if (-not (Test-Path $shared)) { Copy-Item $d.FullName $shared }
+              elseif ((Get-FileHash $shared).Hash -ne (Get-FileHash $d.FullName).Hash) { Copy-Item $d.FullName "$k\$side" }
+            }
           }
           New-Item -ItemType Directory -Force -Path "$k\bench" | Out-Null
           Copy-Item new\tools\bench\bench.ps1, new\tools\bench\suites.txt -Destination "$k\bench"
@@ -77,6 +84,7 @@ jobs:
       - name: quick benchmark on this runner
         shell: powershell
         run: |
+          $env:PATH = "$env:KIT\dlls;$env:PATH"
           & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 3 *>&1 | Tee-Object -FilePath runner_log.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
       # the kit and the runner's report also go to the branch bench-kits (one

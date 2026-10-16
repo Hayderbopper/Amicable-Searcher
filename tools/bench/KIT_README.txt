@@ -4,8 +4,10 @@ Amicable-Searcher benchmark kit
 old\   the program before this change
 new\   the program with this change
 bench\ the benchmark script (bench.ps1) and the list of runs (suites.txt)
+dlls\  the libraries both programs load (GMP, FLINT, ...)
 
-To run it, double-click run_benchmark.bat (or run it from a command prompt).
+Unzip the whole folder first, then double-click run_benchmark.bat (or run
+it from a command prompt).
 It uses 6 threads, runs each test 3 times per program, alternating old and
 new, and reports the median time of each.  It also checks that both programs
 find exactly the same pairs in every run; the last column says so.  The whole
