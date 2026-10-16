@@ -48,7 +48,12 @@ function Invoke-Run([string]$exe, [string]$dir, [string]$hash, [string]$k0, [str
     $p = Start-Process -FilePath $exe -ArgumentList $argList -NoNewWindow -Wait -PassThru `
                        -RedirectStandardOutput $out -RedirectStandardError (Join-Path $dir "err.txt")
     $sw.Stop()
-    if ($p.ExitCode -ne 0) { throw "run failed (exit $($p.ExitCode)): $exe  (see $dir)" }
+    if ($p.ExitCode -ne 0) {
+        foreach ($f in @($out, (Join-Path $dir "err.txt"))) {
+            if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f -Tail 15 | ForEach-Object { Write-Host "  | $_" } }
+        }
+        throw "run failed (exit $($p.ExitCode)): $exe  (see $dir)"
+    }
     $text = (Get-Content -LiteralPath $out -Raw) + (Get-Content -LiteralPath (Join-Path $dir "err.txt") -Raw)
     if ($text -notmatch "complete: every k") { throw "run did not complete: $exe  (see $dir)" }
     return $sw.Elapsed.TotalSeconds
