@@ -1,0 +1,87 @@
+# Builds the Windows program twice, from a base commit ("old") and from this
+# commit ("new"), and packs both with tools/bench into a benchmark kit:
+# run_benchmark.bat times old against new and checks that they find the same
+# pairs.  The kit is uploaded as an artifact; a short benchmark also runs here.
+name: bench-kit
+
+on:
+  push:
+    branches: ["perf-*"]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "commit, branch or tag to compare against"
+        required: false
+        default: "main"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: new
+          fetch-depth: 0
+      - name: base checkout
+        shell: pwsh
+        run: |
+          $base = "${{ inputs.base }}"
+          if (-not $base) { $base = "origin/main" }
+          git -C new worktree add ../old $base
+          git -C old log -1 --format="old: %H %s"
+          git -C new log -1 --format="new: %H %s"
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-gmp
+            mingw-w64-x86_64-mpfr
+            mingw-w64-x86_64-flint
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+      - name: build new
+        shell: pwsh
+        run: .\new\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
+      - name: build old
+        shell: pwsh
+        run: |
+          # reuse the dependencies the first build fetched and compiled
+          Copy-Item new\third_party\primesieve old\third_party\primesieve -Recurse
+          Copy-Item new\third_party\hurchalla old\third_party\hurchalla -Recurse
+          .\old\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
+      - name: package kit
+        shell: pwsh
+        run: |
+          $sha = (git -C new rev-parse --short HEAD)
+          $k = "kit\Amicable-Searcher-bench-$sha"
+          foreach ($side in "old", "new") {
+            New-Item -ItemType Directory -Force -Path "$k\$side" | Out-Null
+            Copy-Item "$side\Build\*.exe", "$side\Build\*.dll" -Destination "$k\$side"
+            Copy-Item "$side\config.txt" -Destination "$k\$side"
+          }
+          New-Item -ItemType Directory -Force -Path "$k\bench" | Out-Null
+          Copy-Item new\tools\bench\bench.ps1, new\tools\bench\suites.txt -Destination "$k\bench"
+          Copy-Item new\tools\bench\run_benchmark.bat -Destination $k
+          Copy-Item new\tools\bench\KIT_README.txt "$k\README.txt"
+          git -C old log -1 --format="old: %H %s" | Out-File -Encoding ascii "$k\VERSIONS.txt"
+          git -C new log -1 --format="new: %H %s" | Out-File -Encoding ascii -Append "$k\VERSIONS.txt"
+          "KIT=$k" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+      - name: quick benchmark on this runner
+        shell: powershell
+        run: |
+          & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-kit
+          path: kit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runner-report
+          path: new/tools/bench/bench_report.txt
