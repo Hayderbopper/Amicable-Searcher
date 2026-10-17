@@ -112,6 +112,11 @@ struct Node {
     NatFactors sig_nat;                         // the same with 128-bit primes
     bool sig_nat_ok = false;
     bool sig_done = false;                      // false: not computed (the tail does not need it)
+    // sx, px, sy, py as 128-bit integers, filled on first use by node_nat()
+    // (-1: not yet, 0: one does not fit, 1: nat[] holds them); reset whenever
+    // sx..py are set
+    mutable signed char nat_state = -1;
+    mutable i128 nat[4] = {0, 0, 0, 0};
 };
 
 void root_node(const SearchK& sk, int root, Node& out);

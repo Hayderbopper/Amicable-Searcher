@@ -112,6 +112,17 @@ inline void raise_to(BigInt& v, u64 w) {
     return true;
 }
 
+// n.sx, n.px, n.sy, n.py as 128-bit integers, converted once per node;
+// false when one of them does not fit
+[[nodiscard]] bool node_nat(const Node& n, i128& A, i128& B, i128& C, i128& D) {
+    if (n.nat_state < 0)
+        n.nat_state = (big_to_i128(n.sx, n.nat[0]) && big_to_i128(n.px, n.nat[1]) &&
+                       big_to_i128(n.sy, n.nat[2]) && big_to_i128(n.py, n.nat[3])) ? 1 : 0;
+    if (n.nat_state == 0) return false;
+    A = n.nat[0]; B = n.nat[1]; C = n.nat[2]; D = n.nat[3];
+    return true;
+}
+
 [[nodiscard]] BigInt sigma_pow(const BigInt& p, int e) {
     BigInt s = 1, pw = 1;
     for (int i = 0; i < e; ++i) { pw *= p; s += pw; }
@@ -1470,8 +1481,7 @@ constexpr double BIG_T_SCAN_WINDOW = 4096.0;
 bool divisor3_native(const Node& n, const Rem& r, const Range& rg, SearchCtx& ctx,
                      double est_width = 0.0, bool* scan_hint = nullptr) {
     i128 A, B, C, Dd;
-    if (!big_to_i128(n.sx, A) || !big_to_i128(n.px, B) || !big_to_i128(n.sy, C) || !big_to_i128(n.py, Dd))
-        return false;
+    if (!node_nat(n, A, B, C, Dd)) return false;
     const int su = r.side[0];
     i128 t1, t2, t3, d1, dz, T;
     // d1 = A*Dd + B*C - A*C
@@ -1591,7 +1601,7 @@ void divisor3_scan(const Node& n, const Rem& r, const Range& rg, SearchCtx& ctx)
     const int ip = (r.side[1] == 0) ? 1 : 2, iq = (ip == 1) ? 2 : 1;
     const int uid = r.id[0], pid = r.id[ip], qid = r.id[iq];
     i128 A = 0, B = 0, C = 0, Dd = 0;
-    const bool nat = big_to_i128(n.sx, A) && big_to_i128(n.px, B) && big_to_i128(n.sy, C) && big_to_i128(n.py, Dd);
+    const bool nat = node_nat(n, A, B, C, Dd);
     Solved solved;
     BigInt a, b, c, d;
     scan_primes(*n.sk, rg.lo, rg.hi, ctx, [&](u64 p) {
@@ -1640,8 +1650,7 @@ bool divisor3_cap(const Node& n, int su, BigInt& cap, bool& have) {
     i128 A, B, C, Dd, d1, dz, X, Y;
     {
         i128 t1, t2, t3;
-        if (!big_to_i128(n.sx, A) || !big_to_i128(n.px, B) || !big_to_i128(n.sy, C) || !big_to_i128(n.py, Dd))
-            return true;
+        if (!node_nat(n, A, B, C, Dd)) return true;
         if (!imul(A, Dd, t1) || !imul(B, C, t2) || !imul(A, C, t3) || !iadd(t1, t2, d1) || !isub(d1, t3, d1))
             return true;
         if (su == 1) {
@@ -1725,8 +1734,8 @@ bool alone_filter(const Node& n, int zside, const BigInt& ulo, BigInt& zfloor) {
     if (zside != 0) return true;
     {   // the same in 128-bit arithmetic when everything fits
         constexpr i128 LIM = static_cast<i128>(1) << 120;
-        i128 sx, px, sy, u, zf, a, b, c, zmin, l, r;
-        if (big_to_i128(n.sx, sx) && big_to_i128(n.px, px) && big_to_i128(n.sy, sy) && big_to_i128(ulo, u) &&
+        i128 sx, px, sy, py, u, zf, a, b, c, zmin, l, r;
+        if (node_nat(n, sx, px, sy, py) && big_to_i128(ulo, u) &&
             big_to_i128(zfloor, zf) && sx > 0 && u < LIM && zf < LIM && imul(sy, u + 1, a) && imul(a, u + 2, b) && b >= 0) {
             zmin = b / sx + (b % sx != 0) - 1;                 // ceil(b / sx) - 1
             if (zmin < zf + 1) zmin = zf + 1;
@@ -2870,6 +2879,7 @@ void root_node(const SearchK& sk, int root, Node& out) {
     out.px = out.cfg->K1;
     out.sy = out.cfg->s2;
     out.py = out.cfg->K2;
+    out.nat_state = -1;
 }
 
 Step classify(const Node& n) {
@@ -2913,6 +2923,7 @@ bool make_child(const Node& parent, const BigInt& q, Node& child, int slot) {
     child.px = parent.px;
     child.sy = parent.sy;
     child.py = parent.py;
+    child.nat_state = -1;
     // q^e and sigma(q^e); unsigned long is only 32 bits on Windows, so the
     // _ui fast path is taken only when the value fits it
     if (s.exp == 1 && mpz_fits_ulong_p(q.get_mpz_t()) && mpz_cmp_ui(q.get_mpz_t(), ULONG_MAX - 1) < 0) {
