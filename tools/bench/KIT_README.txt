@@ -11,7 +11,7 @@ it from a command prompt).
 It uses 6 threads, runs each test 3 times per program, alternating old and
 new, and reports the median time of each.  It also checks that both programs
 find exactly the same pairs in every run; the last column says so.  The whole
-thing takes a few minutes.  Close other heavy programs first for steady times.
+thing takes about 5 to 10 minutes.  Close other heavy programs first for steady times.
 
 Options (add them after run_benchmark.bat):
   -Threads 12     use 12 threads instead of 6
