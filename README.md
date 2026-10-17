@@ -56,8 +56,9 @@ x86-64 CPU from about 2009 on. `./build.sh --help` lists every option.
    .\Build\multi_k_searcher.exe --hash "[(1,0),(1,0)] _ [(1,0)]" 1 100000
    ```
 
-`-Portable`, `-Clean`, `-NoClangFactoring`, `-NoMimalloc` and
-`-Msys2Root D:\msys64` are the options. The build copies the MinGW DLLs into `Build\`, so the folder
+`-Portable`, `-Avx512` (any CPU with AVX-512, tuned for Zen 5), `-Clean`,
+`-NoClangFactoring`, `-NoMimalloc` and `-Msys2Root D:\msys64` are the
+options. The build copies the MinGW DLLs into `Build\`, so the folder
 runs on its own.
 
 ### What the build does

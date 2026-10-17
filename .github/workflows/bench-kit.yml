@@ -13,6 +13,12 @@ on:
         description: "commit, branch or tag to compare against"
         required: false
         default: "main"
+      new_cpu:
+        description: "how to build new: portable (x86-64-v2, like old) or avx512"
+        required: false
+        default: "portable"
+        type: choice
+        options: ["portable", "avx512"]
 
 permissions:
   contents: write
@@ -52,16 +58,23 @@ jobs:
             mingw-w64-x86_64-ninja
       - name: build new
         shell: pwsh
-        run: .\new\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
+        env:
+          NEW_CPU: ${{ inputs.new_cpu }}
+        run: |
+          if ($env:NEW_CPU -eq "avx512") { .\new\build.ps1 -Avx512 -Msys2Root "${{ steps.msys2.outputs.msys2-location }}" }
+          else { .\new\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}" }
       - name: build old
         shell: pwsh
         run: |
           # reuse the dependencies the first build fetched and compiled
           Copy-Item new\third_party\primesieve old\third_party\primesieve -Recurse
           Copy-Item new\third_party\hurchalla old\third_party\hurchalla -Recurse
+          if (Test-Path new\third_party\mimalloc) { Copy-Item new\third_party\mimalloc old\third_party\mimalloc -Recurse }
           .\old\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
       - name: package kit
         shell: pwsh
+        env:
+          NEW_CPU: ${{ inputs.new_cpu }}
         run: |
           $sha = (git -C new rev-parse --short HEAD)
           $k = "kit\Amicable-Searcher-bench-$sha"
@@ -83,10 +96,21 @@ jobs:
           Copy-Item new\tools\bench\KIT_README.txt "$k\README.txt"
           git -C old log -1 --format="old: %H %s" | Out-File -Encoding ascii "$k\VERSIONS.txt"
           git -C new log -1 --format="new: %H %s" | Out-File -Encoding ascii -Append "$k\VERSIONS.txt"
+          "old build: portable (x86-64-v2)" | Out-File -Encoding ascii -Append "$k\VERSIONS.txt"
+          "new build: $(if ($env:NEW_CPU -eq 'avx512') { 'AVX-512 (x86-64-v4)' } else { 'portable (x86-64-v2)' })" | Out-File -Encoding ascii -Append "$k\VERSIONS.txt"
           "KIT=$k" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
       - name: quick benchmark on this runner
         shell: powershell
+        env:
+          NEW_CPU: ${{ inputs.new_cpu }}
         run: |
+          if ($env:NEW_CPU -eq "avx512") {
+            Add-Type -Namespace Win -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(int f);'
+            if (-not [Win.Cpu]::IsProcessorFeaturePresent(41)) {        # PF_AVX512F_INSTRUCTIONS_AVAILABLE
+              "This runner's CPU has no AVX-512, so the AVX-512 build was not run here." | Tee-Object -FilePath runner_log.txt
+              exit 0
+            }
+          }
           & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 1 *>&1 | Tee-Object -FilePath runner_log.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
       # the kit and the runner's report also go to the branch bench-kits (one

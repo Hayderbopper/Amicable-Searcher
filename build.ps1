@@ -4,6 +4,9 @@
 #
 #   .\build.ps1                      fastest build, tuned for THIS machine's CPU
 #   .\build.ps1 -Portable            generic x86-64-v2 build for any x86-64 CPU
+#   .\build.ps1 -Avx512              AVX-512 build (x86-64-v4, tuned for Zen 5) for
+#                                    any CPU with AVX-512: Ryzen 7000/9000,
+#                                    recent Xeon/EPYC, Intel 11th gen mobile
 #                                    from about 2009 on
 #   .\build.ps1 -Clean               delete the object files first
 #   .\build.ps1 -NoClangFactoring    compile external_factoring.cpp with g++ too
@@ -39,6 +42,7 @@
 # also copies those DLLs into Build\ so the folder runs on its own.
 param(
     [switch]$Portable,
+    [switch]$Avx512,
     [switch]$Clean,
     [switch]$NoClangFactoring,
     [switch]$NoMimalloc,
@@ -89,8 +93,27 @@ if (-not $hb) {
 Write-Host "hurchalla: $hb"
 
 # ---------------------------------------------------------------- flags
-if ($Portable) { $cpu = @("-march=x86-64-v2", "-mtune=generic"); $objName = "obj-portable" }
-else           { $cpu = @("-march=native", "-mtune=native");     $objName = "obj-native" }
+# true when both compilers accept these flags (older ones lack -mtune=znver5)
+function Test-CpuFlags([string[]]$f) {
+    $ErrorActionPreference = "Continue"          # a rejected flag writes to stderr; that is the answer, not an error
+    $probe = Join-Path ([IO.Path]::GetTempPath()) "amicable_flag_probe.cpp"
+    Set-Content -LiteralPath $probe -Value "int main() { return 0; }"
+    foreach ($cc in @($gpp, $clangpp)) {
+        if (-not (Test-Path -LiteralPath $cc)) { continue }
+        & $cc @f -fsyntax-only $probe 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+    }
+    return $true
+}
+if ($Portable -and $Avx512) { throw "-Portable and -Avx512 cannot be combined" }
+if ($Portable)    { $cpu = @("-march=x86-64-v2", "-mtune=generic"); $objName = "obj-portable" }
+elseif ($Avx512) {
+    $cpu = @("-march=x86-64-v4", "-mtune=znver5")
+    if (-not (Test-CpuFlags $cpu)) { $cpu = @("-march=x86-64-v4", "-mtune=znver4") }
+    if (-not (Test-CpuFlags $cpu)) { $cpu = @("-march=x86-64-v4", "-mtune=generic") }
+    $objName = "obj-avx512"
+}
+else              { $cpu = @("-march=native", "-mtune=native");     $objName = "obj-native" }
 
 # -Wa,-muse-unaligned-vector-move: 64-bit Windows only guarantees 16-byte stack
 # alignment, so AVX/AVX-512 code built by MinGW GCC can crash on an "aligned"
@@ -156,7 +179,7 @@ if (-not $NoClangFactoring) { $factoringCompiler = $clangpp }
 Write-Host "compiler : $gpp"
 Write-Host "factoring: $factoringCompiler"
 Write-Host "allocator: $(if ($mimalloc) { 'mimalloc' } elseif ($NoMimalloc) { 'default (-NoMimalloc)' } else { 'default (mimalloc not downloaded)' })"
-Write-Host "mode     : $(if ($Portable) { 'portable' } else { 'native' }) ($($cpu -join ' '))"
+Write-Host "mode     : $(if ($Portable) { 'portable' } elseif ($Avx512) { 'avx512' } else { 'native' }) ($($cpu -join ' '))"
 
 # ---------------------------------------------------------------- compile
 $objDir = Join-Path $buildDir $objName
