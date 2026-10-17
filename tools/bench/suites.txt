@@ -1,0 +1,12 @@
+# name | hash | start_k | end_k (exclusive)
+# Each line is one timed run.  Pick runs whose pairs are known, so a changed
+# program that finds different pairs is caught.  Each run takes several
+# seconds on a fast 6-core PC, so timer noise stays small; the slow single k
+# (8192, 128) keep every thread busy on one k.
+type 23, k 1-8191 (591 pairs)   | [(1,0),(1,0)] _ [(1,0),(1,0),(1,0)]       | 1     | 8192
+type 23, k 8193-16383           | [(1,0),(1,0)] _ [(1,0),(1,0),(1,0)]       | 8193  | 16384
+type 23, k = 8192 (one slow k)  | [(1,0),(1,0)] _ [(1,0),(1,0),(1,0)]       | 8192  | 8193
+type 33, k 1-127                | [(1,0),(1,0),(1,0)] _ [(1,0),(1,0),(1,0)] | 1     | 128
+type 33, k = 128 (one slow k)   | [(1,0),(1,0),(1,0)] _ [(1,0),(1,0),(1,0)] | 128   | 129
+type 24, k = 128 (one slow k)   | [(1,0),(1,0)] _ [(1,0),(1,0),(1,0),(1,0)] | 128   | 129
+type 21, k 1-9999999            | [(1,0),(1,0)] _ [(1,0)]                   | 1     | 10000000

@@ -47,8 +47,49 @@ ResultWriter::ResultWriter(const std::filesystem::path& file, std::string author
         throw std::runtime_error("Cannot open output file: " + file.string());
 }
 
+ResultWriter::~ResultWriter() {
+    try {
+        flush();
+    } catch (const std::exception& e) {
+        std::cerr << "error: " << e.what() << '\n';
+    }
+}
+
+void ResultWriter::flush() {
+    std::lock_guard<std::mutex> lock(mu_);
+    flush_locked();
+}
+
+void ResultWriter::flush_locked() {
+    if (pending_.empty()) return;
+    // opened under the lock: another run of this hash (a range run next to a
+    // skipped run) may append to the same file
+    FileLock flock(path_);
+    std::error_code ec;
+    const std::uintmax_t before = std::filesystem::exists(path_, ec) ? std::filesystem::file_size(path_, ec) : 0;
+    const bool sized = !ec;
+    bool ok = false;
+    {
+        std::ofstream out(path_, std::ios::out | std::ios::app);
+        out << pending_;
+        out.flush();
+        ok = static_cast<bool>(out);
+    }
+    if (!ok) {
+        // drop a partly written batch, so a retry appends it whole and once
+        if (sized) std::filesystem::resize_file(path_, before, ec);
+        throw std::runtime_error("Cannot write output file: " + path_.string());
+    }
+    pending_.clear();
+#ifdef AMICABLE_TRACE
+    for (const std::string& s : pending_trace_) trace_write("PAIR " + s);
+    pending_trace_.clear();
+#endif
+}
+
 void ResultWriter::refresh_known() {
     std::lock_guard<std::mutex> lock(mu_);
+    flush_locked();
     FileLock flock(path_);
     for (const std::string& n : pairs_in_file(path_)) known_.insert(n);
 }
@@ -72,16 +113,11 @@ void ResultWriter::write(
     }
     std::cout << text;
     std::cout.flush();
-    // opened per pair under the lock: another run of this hash (a range run
-    // next to a skipped run) may append to the same file
-    FileLock flock(path_);
-    std::ofstream out(path_, std::ios::out | std::ios::app);
-    out << text;
-    out.flush();
-    if (!out) throw std::runtime_error("Cannot write output file: " + path_.string());
+    pending_ += text;
 #ifdef AMICABLE_TRACE
-    trace_write("PAIR " + small_str);
+    pending_trace_.push_back(small_str);
 #endif
+    if (pending_.size() >= (1u << 20)) flush_locked();
 }
 
 #ifdef AMICABLE_TRACE

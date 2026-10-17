@@ -4,10 +4,15 @@
 #
 #   .\build.ps1                      fastest build, tuned for THIS machine's CPU
 #   .\build.ps1 -Portable            generic x86-64-v2 build for any x86-64 CPU
+#   .\build.ps1 -Avx512              AVX-512 build (x86-64-v4, tuned for Zen 5) for
+#                                    any CPU with AVX-512: Ryzen 7000/9000,
+#                                    recent Xeon/EPYC, Intel 11th gen mobile
 #                                    from about 2009 on
 #   .\build.ps1 -Clean               delete the object files first
 #   .\build.ps1 -NoClangFactoring    compile external_factoring.cpp with g++ too
 #                                    (only if clang++ cannot be installed)
+#   .\build.ps1 -NoMimalloc          keep MinGW's default memory allocator
+#                                    (see "mimalloc" below)
 #   .\build.ps1 -Msys2Root D:\msys64 MSYS2 somewhere else than C:\msys64
 #
 # One-time setup: install MSYS2 (https://www.msys2.org), open "MSYS2 MINGW64"
@@ -25,13 +30,22 @@
 # file's interface passes no __int128 by value, so the two compilers' objects
 # link safely.
 #
+# mimalloc (on by default): the search makes many small allocations from
+# several threads, and the Windows heap behind MinGW's malloc is slow at that.
+# Microsoft's mimalloc is downloaded into third_party\mimalloc the first time
+# (third_party\get_mimalloc.ps1, needs git) and compiled in; Source\fast_alloc.cpp
+# routes new/delete and GMP's allocations to it.  If the download fails the
+# build goes on with the default allocator.
+#
 # The programs need the MinGW DLLs (GMP, FLINT, primesieve, ...): run them from
 # the "MSYS2 MINGW64" shell or with <Msys2Root>\mingw64\bin on PATH.  The build
 # also copies those DLLs into Build\ so the folder runs on its own.
 param(
     [switch]$Portable,
+    [switch]$Avx512,
     [switch]$Clean,
     [switch]$NoClangFactoring,
+    [switch]$NoMimalloc,
     [string]$Msys2Root = "C:\msys64"
 )
 $ErrorActionPreference = "Stop"
@@ -79,8 +93,27 @@ if (-not $hb) {
 Write-Host "hurchalla: $hb"
 
 # ---------------------------------------------------------------- flags
-if ($Portable) { $cpu = @("-march=x86-64-v2", "-mtune=generic"); $objName = "obj-portable" }
-else           { $cpu = @("-march=native", "-mtune=native");     $objName = "obj-native" }
+# true when both compilers accept these flags (older ones lack -mtune=znver5)
+function Test-CpuFlags([string[]]$f) {
+    $ErrorActionPreference = "Continue"          # a rejected flag writes to stderr; that is the answer, not an error
+    $probe = Join-Path ([IO.Path]::GetTempPath()) "amicable_flag_probe.cpp"
+    Set-Content -LiteralPath $probe -Value "int main() { return 0; }"
+    foreach ($cc in @($gpp, $clangpp)) {
+        if (-not (Test-Path -LiteralPath $cc)) { continue }
+        & $cc @f -fsyntax-only $probe 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+    }
+    return $true
+}
+if ($Portable -and $Avx512) { throw "-Portable and -Avx512 cannot be combined" }
+if ($Portable)    { $cpu = @("-march=x86-64-v2", "-mtune=generic"); $objName = "obj-portable" }
+elseif ($Avx512) {
+    $cpu = @("-march=x86-64-v4", "-mtune=znver5")
+    if (-not (Test-CpuFlags $cpu)) { $cpu = @("-march=x86-64-v4", "-mtune=znver4") }
+    if (-not (Test-CpuFlags $cpu)) { $cpu = @("-march=x86-64-v4", "-mtune=generic") }
+    $objName = "obj-avx512"
+}
+else              { $cpu = @("-march=native", "-mtune=native");     $objName = "obj-native" }
 
 # -Wa,-muse-unaligned-vector-move: 64-bit Windows only guarantees 16-byte stack
 # alignment, so AVX/AVX-512 code built by MinGW GCC can crash on an "aligned"
@@ -117,6 +150,26 @@ if ($ps[0]) {
     $libs = @("-L$($ps[1])") + $libs
 }
 $libs += @("-lprimesieve", "-lflint", "-lmpfr", "-lgmpxx", "-lgmp")
+# mimalloc: single-file build of third_party\mimalloc\src (src\static.c)
+$miDir = Join-Path $root "third_party\mimalloc\src"
+$mimalloc = $false
+if (-not $NoMimalloc) {
+    if (-not (Test-Path -LiteralPath (Join-Path $miDir "src\static.c"))) {
+        try {
+            & (Join-Path $root "third_party\get_mimalloc.ps1")
+        } catch {
+            Write-Warning "mimalloc download failed ($_); building with the default allocator"
+        }
+    }
+    $mimalloc = Test-Path -LiteralPath (Join-Path $miDir "src\static.c")
+}
+if ($mimalloc) {
+    $flags += @("-DAMICABLE_MIMALLOC", "-I$(Join-Path $miDir 'include')")
+    $libs += @("-lpsapi", "-lshell32", "-luser32", "-ladvapi32", "-lbcrypt")    # what mimalloc uses on Windows
+    # libstdc++ linked in: code inside libstdc++-6.dll would free memory that
+    # this program's new/delete gave out with its own (the C runtime's) free
+    $libs += "-static-libstdc++"
+}
 # clang realigns the stack for AVX itself (GCC bug 54412 is GCC's) and has no
 # GNU as option: the same flags without -Wa,-muse-unaligned-vector-move
 $clangFlags = $flags | Where-Object { $_ -ne "-Wa,-muse-unaligned-vector-move" }
@@ -125,7 +178,8 @@ $factoringCompiler = $gpp
 if (-not $NoClangFactoring) { $factoringCompiler = $clangpp }
 Write-Host "compiler : $gpp"
 Write-Host "factoring: $factoringCompiler"
-Write-Host "mode     : $(if ($Portable) { 'portable' } else { 'native' }) ($($cpu -join ' '))"
+Write-Host "allocator: $(if ($mimalloc) { 'mimalloc' } elseif ($NoMimalloc) { 'default (-NoMimalloc)' } else { 'default (mimalloc not downloaded)' })"
+Write-Host "mode     : $(if ($Portable) { 'portable' } elseif ($Avx512) { 'avx512' } else { 'native' }) ($($cpu -join ' '))"
 
 # ---------------------------------------------------------------- compile
 $objDir = Join-Path $buildDir $objName
@@ -156,6 +210,17 @@ foreach ($src in $sources) {
         & $gpp @flags -c $src.FullName -o $obj
     }
     if ($LASTEXITCODE -ne 0) { throw "compile failed: $($src.Name)" }
+}
+
+if ($mimalloc) {
+    $miObj = Join-Path $objDir "mimalloc.o"
+    $miSrc = Join-Path $miDir "src\static.c"
+    if (-not (Test-Path -LiteralPath $miObj) -or (Get-Item -LiteralPath $miObj).LastWriteTime -lt (Get-Item -LiteralPath $sigFile).LastWriteTime) {
+        Write-Host "Compiling mimalloc"
+        & (Join-Path $mingwBin "gcc.exe") -O3 -DNDEBUG @cpu "-I$(Join-Path $miDir 'include')" -w -c $miSrc -o $miObj
+        if ($LASTEXITCODE -ne 0) { throw "compile failed: mimalloc (build with -NoMimalloc to leave it out)" }
+    }
+    $common += $miObj
 }
 
 # ---------------------------------------------------------------- link

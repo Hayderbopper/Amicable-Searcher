@@ -1,0 +1,139 @@
+# Builds the Windows program twice, from a base commit ("old") and from this
+# commit ("new"), and packs both with tools/bench into a benchmark kit:
+# run_benchmark.bat times old against new and checks that they find the same
+# pairs.  The kit is uploaded as an artifact; a short benchmark also runs here.
+name: bench-kit
+
+on:
+  push:
+    branches: ["perf-*"]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "commit, branch or tag to compare against"
+        required: false
+        default: "main"
+      new_cpu:
+        description: "how to build new: portable (x86-64-v2, like old) or avx512"
+        required: false
+        default: "portable"
+        type: choice
+        options: ["portable", "avx512"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: new
+          fetch-depth: 0
+      - name: base checkout
+        shell: pwsh
+        env:
+          BASE: ${{ inputs.base }}
+        run: |
+          $base = $env:BASE
+          if (-not $base) { $base = "origin/main" }
+          if ($base -notmatch '^[A-Za-z0-9._/][A-Za-z0-9._/-]*$') { throw "base must be a branch, tag or commit: $base" }
+          git -C new worktree add ../old "$base"
+          git -C old log -1 --format="old: %H %s"
+          git -C new log -1 --format="new: %H %s"
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-gmp
+            mingw-w64-x86_64-mpfr
+            mingw-w64-x86_64-flint
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+      - name: build new
+        shell: pwsh
+        env:
+          NEW_CPU: ${{ inputs.new_cpu }}
+        run: |
+          if ($env:NEW_CPU -eq "avx512") { .\new\build.ps1 -Avx512 -Msys2Root "${{ steps.msys2.outputs.msys2-location }}" }
+          else { .\new\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}" }
+      - name: build old
+        shell: pwsh
+        run: |
+          # reuse the dependencies the first build fetched and compiled
+          Copy-Item new\third_party\primesieve old\third_party\primesieve -Recurse
+          Copy-Item new\third_party\hurchalla old\third_party\hurchalla -Recurse
+          if (Test-Path new\third_party\mimalloc) { Copy-Item new\third_party\mimalloc old\third_party\mimalloc -Recurse }
+          .\old\build.ps1 -Portable -Msys2Root "${{ steps.msys2.outputs.msys2-location }}"
+      - name: package kit
+        shell: pwsh
+        env:
+          NEW_CPU: ${{ inputs.new_cpu }}
+        run: |
+          $sha = (git -C new rev-parse --short HEAD)
+          $k = "kit\Amicable-Searcher-bench-$sha"
+          # the DLLs once, in dlls\ (run_benchmark.bat puts it on PATH); a DLL
+          # that differs between the two builds stays next to its program
+          New-Item -ItemType Directory -Force -Path "$k\dlls" | Out-Null
+          foreach ($side in "old", "new") {
+            New-Item -ItemType Directory -Force -Path "$k\$side" | Out-Null
+            Copy-Item "$side\Build\multi_k_searcher.exe", "$side\config.txt" -Destination "$k\$side"
+            foreach ($d in Get-ChildItem "$side\Build\*.dll") {
+              $shared = Join-Path "$k\dlls" $d.Name
+              if (-not (Test-Path $shared)) { Copy-Item $d.FullName $shared }
+              elseif ((Get-FileHash $shared).Hash -ne (Get-FileHash $d.FullName).Hash) { Copy-Item $d.FullName "$k\$side" }
+            }
+          }
+          New-Item -ItemType Directory -Force -Path "$k\bench" | Out-Null
+          Copy-Item new\tools\bench\bench.ps1, new\tools\bench\suites.txt -Destination "$k\bench"
+          Copy-Item new\tools\bench\run_benchmark.bat -Destination $k
+          Copy-Item new\tools\bench\KIT_README.txt "$k\README.txt"
+          git -C old log -1 --format="old: %H %s" | Out-File -Encoding ascii "$k\VERSIONS.txt"
+          git -C new log -1 --format="new: %H %s" | Out-File -Encoding ascii -Append "$k\VERSIONS.txt"
+          "old build: portable (x86-64-v2)" | Out-File -Encoding ascii -Append "$k\VERSIONS.txt"
+          "new build: $(if ($env:NEW_CPU -eq 'avx512') { 'AVX-512 (x86-64-v4)' } else { 'portable (x86-64-v2)' })" | Out-File -Encoding ascii -Append "$k\VERSIONS.txt"
+          "KIT=$k" | Out-File -Encoding ascii -Append $env:GITHUB_ENV
+      - name: quick benchmark on this runner
+        shell: powershell
+        env:
+          NEW_CPU: ${{ inputs.new_cpu }}
+        run: |
+          if ($env:NEW_CPU -eq "avx512") {
+            Add-Type -Namespace Win -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(int f);'
+            if (-not [Win.Cpu]::IsProcessorFeaturePresent(41)) {        # PF_AVX512F_INSTRUCTIONS_AVAILABLE
+              "This runner's CPU has no AVX-512, so the AVX-512 build was not run here." | Tee-Object -FilePath runner_log.txt
+              exit 0
+            }
+          }
+          & "new\tools\bench\bench.ps1" -Old "$env:KIT\old" -New "$env:KIT\new" -Threads ([Environment]::ProcessorCount) -Repeats 1 *>&1 | Tee-Object -FilePath runner_log.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      # the kit and the runner's report also go to the branch bench-kits (one
+      # commit, replaced each time), where they can be fetched with git
+      - name: publish kit to the bench-kits branch
+        if: always()
+        shell: pwsh
+        run: |
+          $sha = (git -C new rev-parse --short HEAD)
+          New-Item -ItemType Directory -Force -Path pub | Out-Null
+          if (Test-Path kit) { Compress-Archive -Path "kit\*" -DestinationPath "pub\Amicable-Searcher-bench-$sha.zip" }
+          if (Test-Path runner_log.txt) { Copy-Item runner_log.txt pub\ }
+          if (Test-Path new\tools\bench\bench_report.txt) { Copy-Item new\tools\bench\bench_report.txt pub\ }
+          git -C new log -1 --format="%H %s" | Out-File -Encoding ascii pub\COMMIT.txt
+          Set-Location pub
+          git init -q
+          git checkout -q -b bench-kits
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "bench kit for $sha"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" bench-kits
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-kit
+          path: kit
