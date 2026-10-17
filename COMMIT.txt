@@ -1,0 +1,1 @@
+cc044d068102bf824b61adbe90a9fdba3ca9fd77 Windows: -Avx512 build option; bench kit can compare portable vs AVX-512
